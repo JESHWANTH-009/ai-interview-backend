@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 import google.generativeai as genai
 import json
 import re
+from google.api_core.exceptions import ResourceExhausted
 
 load_dotenv()
 
@@ -43,6 +44,8 @@ async def generate_first_question(role: str, experience: str) -> str:
     try:
         response = await model.generate_content_async(prompt)
         return extract_text_from_response(response)
+    except ResourceExhausted: # Catch the specific quota error
+        raise GeminiQuotaExceededError("Gemini API quota exceeded. Please try again later.")
     except Exception as e:
         print(f"[ERROR] generate_first_question failed: {e}")
         return "Failed to generate the first question. Please try again later."
@@ -61,6 +64,8 @@ async def generate_next_question(role: str, experience: str, conversation_histor
         chat = model.start_chat(history=conversation_history)
         response = await chat.send_message_async(instruction + "\n\nWhat is the next question?")
         return extract_text_from_response(response)
+    except ResourceExhausted: 
+        raise GeminiQuotaExceededError("Gemini API quota exceeded. Please try again later.")
     except Exception as e:
         print(f"[ERROR] generate_next_question failed: {e}")
         return "Failed to generate the next question. Please try again later."
@@ -72,20 +77,6 @@ def clean_json_block(text: str) -> str:
         text = re.sub(r"^```(?:json)?", "", text)
         text = text.replace("```", "").strip()
     return text
-SCORING_RUBRIC_V1 = {
-    0: "Invalid / Copy-paste / Gibberish / Off-topic",
-    1: "Extremely poor understanding or no structure",
-    2: "Extremely poor understanding or no structure",
-    3: "Extremely poor understanding or no structure",
-    4: "Some relevance, lacks depth, major missing points",
-    5: "Some relevance, lacks depth, major missing points",
-    6: "Mostly correct with minor gaps or shallow explanations",
-    7: "Mostly correct with minor gaps or shallow explanations",
-    8: "Strong, clear answer with good structure, few small misses",
-    9: "Strong, clear answer with good structure, few small misses",
-    10: "Perfect, complete, well-structured and insightful answer"
-}
-
 
 STRICT_SYSTEM_PROMPT = (
     "You are an AI Interview Evaluator. Your job is to score technical answers (0–10 scale) using a strict, standardized rubric. "
@@ -126,8 +117,7 @@ STRICT_SYSTEM_PROMPT = (
     "4. Red Flag Note (if any): Note if user copied question, gave generic buzzwords, or was off-topic\n\n"
     "You must be consistent across all responses. Do not guess user intent. Do not reward fluff. Focus on clarity, correctness, and completeness."
 )
-
-# === MAIN EVALUATION FUNCTION WITH STRICT RUBRIC AND GUARDRAILS (UPDATED) ===
+#Evaluation function
 async def evaluate_answer(role: str, experience: str, question: str, answer: str) -> dict:
     prompt = f"""
 {STRICT_SYSTEM_PROMPT}
@@ -153,6 +143,8 @@ OUTPUT (valid JSON only, no markdown):
         feedback_dict = json.loads(cleaned_text)
         feedback_dict['score'] = int(feedback_dict.get('score', 0))
         return feedback_dict
+    except ResourceExhausted:
+        raise GeminiQuotaExceededError("Gemini API quota exceeded. Please try again later.")
     except json.JSONDecodeError as jde:
         print(f"[ERROR] JSON parsing failed: {jde} | Response: {text}")
         return {
@@ -233,6 +225,8 @@ Please provide a markdown-formatted summary with the following sections:
     try:
         response = model.generate_content(prompt)
         return extract_text_from_response(response)
+    except ResourceExhausted:
+        raise GeminiQuotaExceededError("Gemini API quota exceeded. Please try again later.")
     except Exception as e:
         print(f"[ERROR] generate_overall_feedback failed: {e}")
         return "Failed to generate overall feedback due to an internal error."

@@ -162,31 +162,6 @@ async def submit_answer(data: AnswerRequest, user_data: dict = Depends(get_curre
         raise HTTPException(status_code=500, detail="Something went wrong.")
 
 
-@router.post("/next")
-async def get_next_question_safeguarded(request: Request, user_data: dict = Depends(get_current_user_data)):
-    # This route should not be used unless for manual testing
-    data = await request.json()
-    interview_id = data.get("interview_id")
-    user_uid = user_data['uid']
-
-    interview_ref = db.collection('interviews').document(interview_id)
-    interview_doc = await asyncio.to_thread(interview_ref.get)
-    if not interview_doc.exists:
-        raise HTTPException(status_code=404, detail="Interview not found.")
-
-    interview_data = interview_doc.to_dict()
-    if interview_data.get('user_uid') != user_uid or not interview_data.get('is_active'):
-        raise HTTPException(status_code=403, detail="Unauthorized or inactive interview.")
-
-    questions = interview_data.get('questions', [])
-    answers = interview_data.get('answers', [])
-    num_questions = interview_data.get('num_questions', 10)
-
-    if len(questions) >= num_questions:
-        raise HTTPException(status_code=400, detail="Question limit reached. Interview already completed.")
-
-    return {"message": "Manual next route should not be used in normal flow."}
-
 @router.post('/end')
 async def end_interview(request: Request, user_data: dict = Depends(get_current_user_data)):
     data = await request.json()
@@ -269,7 +244,6 @@ async def overall_feedback(request: Request, user_data: dict = Depends(get_curre
             'overall_feedback': raw_feedback_text,
             'updated_at': firestore.SERVER_TIMESTAMP
         })
-
     return {
         "final_score": avg_score,
         "per_question_scores": per_question_scores,
